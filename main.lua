@@ -136,6 +136,7 @@ function printState()
 		print("  mano:  " .. sHandStr)
 		print("  temp:  " .. sTempStr)
 	end
+	print("refilling: " .. tostring(refilling))
 	print()
 end
 
@@ -154,8 +155,8 @@ end
 function love.mousepressed(x, y, button)
 	-- Click izquierdo sobre el mazo => robar la primera carta
 	if deck:containsPoint(x, y) then
-		if button == 1 then
-			if not deck:isEmpty() and not drawnCards:isFull() then
+		if button == 1 and not deck:isEmpty() then
+			if not drawnCards:isFull() and (refilling or drawnCards:count() < 2) then
 				refilling = true
 				drawnCards:addCard(deck:drawCard())
 				saveScenario()
@@ -203,13 +204,14 @@ function love.mousepressed(x, y, button)
 		end
 		stash.tempDiscard = {}
 		lifepoints = stash.lifepoints
+		refilling = false
 		printState()
 		return
 	end
 
 	-- Click en botón rellenar => llenar drawnCards desde el deck
 	if button == 1 and x >= btnX and x <= btnX + btnW and y >= btn3Y and y <= btn3Y + btnH then
-		if #drawnCards.cards < 4 then
+		if #drawnCards.cards < 2 or refilling then
 			refilling = true
 			while not drawnCards:isFull() and not deck:isEmpty() do
 				drawnCards:addCard(deck:drawCard())
@@ -227,7 +229,7 @@ function love.mousepressed(x, y, button)
 	local idx = drawnCards:getCardAt(x, y)
 	if idx then
 		-- Bloqueado si se está rellenando, o si es la última carta y aún hay mazo
-		if refilling or (deck:count() > 0 and drawnCards:count() == 1) then
+		if (refilling and drawnCards:count() < 4) or (deck:count() > 0 and drawnCards:count() == 1) then
 			return
 		end
 
