@@ -11,10 +11,12 @@ local drawnCards   -- Cartas robadas del mazo (max 4)
 local discard      -- Descarte para cartas Corazones
 local playerHand   -- Mano del jugador
 local stash        -- Escenario guardado (array de cartas) o nil
+local lifepoints = 20  -- Vida del jugador
 
 -- Botones: posición y tamaño
 local btnX, btnY, btnW, btnH = 600, 140, 80, 40
-local btn2Y = btnY + btnH + 5  -- Botón calabozo, mismo X, debajo del reinicio
+local btn2Y = btnY + btnH + 5   -- Botón calabozo, mismo X, debajo del reinicio
+local btn3Y = btn2Y + btnH + 5  -- Botón rellenar, mismo X, debajo del calabozo
 
 function love.load()
 	-- Semilla aleatoria para math.random
@@ -33,6 +35,12 @@ end
 function love.draw()
 	-- Fondo gris
 	love.graphics.clear(0.5, 0.5, 0.5)
+
+	-- Vida del jugador arriba del mazo
+	love.graphics.setColor(0, 0, 0)
+    love.graphics.setFont(love.graphics.newFont(36))
+	love.graphics.print(lifepoints, 65, 60)
+    love.graphics.setFont(love.graphics.newFont(13))
 
 	-- Dibujar todas las entidades en orden
 	deck:draw()
@@ -55,6 +63,14 @@ function love.draw()
 	love.graphics.setLineWidth(2)
 	love.graphics.rectangle("line", btnX, btn2Y, btnW, btnH)
 	love.graphics.print("Calabozo", btnX + 8, btn2Y + 12)
+
+	-- Botón rellenar (azul, debajo del amarillo)
+	love.graphics.setColor(0.2, 0.4, 0.9)
+	love.graphics.rectangle("fill", btnX, btn3Y, btnW, btnH)
+	love.graphics.setColor(1, 1, 1)
+	love.graphics.setLineWidth(2)
+	love.graphics.rectangle("line", btnX, btn3Y, btnW, btnH)
+	love.graphics.print("Rellenar", btnX + 8, btn3Y + 12)
 end
 
 -- Imprime el estado actual de todas las entidades en consola
@@ -161,9 +177,25 @@ function love.mousepressed(x, y, button)
 			return
 		end
 
+		-- Click en botón rellenar => llenar drawnCards desde el deck
+		if x >= btnX and x <= btnX + btnW and y >= btn3Y and y <= btn3Y + btnH then
+			if #drawnCards.cards == 0 or #drawnCards.cards == 1 then
+				while not drawnCards:isFull() and not deck:isEmpty() do
+					drawnCards:addCard(deck:drawCard())
+				end
+				saveScenario()
+				printState()
+			end
+			return
+		end
+
 		-- Click sobre una carta robada
 		local idx = drawnCards:getCardAt(x, y)
 		if idx then
+			-- No se puede mover la última carta si aún quedan cartas en el mazo
+			if deck:count() > 0 and drawnCards:count() == 1 then
+				return
+			end
 			local card = drawnCards:removeCard(idx)
 			-- Corazones van al descarte, el resto a la mano
 			if card.suit == "Corazones" then
