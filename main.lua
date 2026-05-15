@@ -126,85 +126,146 @@ function saveScenario()
 end
 
 function love.mousepressed(x, y, button)
-	if button == 1 then
-		-- Click izquierdo sobre el mazo => robar la primera carta
-		if deck:containsPoint(x, y) then
-			-- Robar carta si es posible
+	-- Click izquierdo sobre el mazo => robar la primera carta
+	if deck:containsPoint(x, y) then
+		if button == 1 then
 			if not deck:isEmpty() and not drawnCards:isFull() then
 				drawnCards:addCard(deck:drawCard())
-				-- Actualizar stash con drawnCards actual
 				saveScenario()
 			end
 			printState()
-			return
 		end
+		return
+	end
 
-		-- Click en botón reinicio => recrear todo desde cero
-		if x >= btnX and x <= btnX + btnW and y >= btnY and y <= btnY + btnH then
-			deck = Deck:new(50, 100)
-			drawnCards = DrawnCards:new(50, 100, 110)
-			discard = Discard:new(50, 250)
-			playerHand = PlayerHand:new(160, 250)
-			stash = nil
-			printState()
-			return
-		end
+	-- Click en botón reinicio => recrear todo desde cero
+	if x >= btnX and x <= btnX + btnW and y >= btnY and y <= btnY + btnH then
+		deck = Deck:new(50, 100)
+		drawnCards = DrawnCards:new(50, 100, 110)
+		discard = Discard:new(50, 250)
+		playerHand = PlayerHand:new(160, 250)
+		stash = nil
+		lifepoints = 20
+		printState()
+		return
+	end
 
-		-- Click en botón reinicio calabozo => restaurar escenario guardado
-		if stash and x >= btnX and x <= btnX + btnW and y >= btn2Y and y <= btn2Y + btnH then
-			-- Remover las cartas del stash del descarte y la mano
-			for _, sCard in ipairs(stash) do
-				for i = #discard.cards, 1, -1 do
-					if discard.cards[i] == sCard then
-						table.remove(discard.cards, i)
-						break
-					end
-				end
-				for i = #playerHand.cards, 1, -1 do
-					if playerHand.cards[i] == sCard then
-						table.remove(playerHand.cards, i)
-						break
-					end
+	-- Click en botón reinicio calabozo => restaurar escenario guardado
+	if stash and x >= btnX and x <= btnX + btnW and y >= btn2Y and y <= btn2Y + btnH then
+		for _, sCard in ipairs(stash) do
+			for i = #discard.cards, 1, -1 do
+				if discard.cards[i] == sCard then
+					table.remove(discard.cards, i)
+					break
 				end
 			end
-			-- Restaurar drawnCards con copia del stash (no compartir referencia)
-			drawnCards.cards = {}
-			for _, card in ipairs(stash) do
-				table.insert(drawnCards.cards, card)
+			for i = #playerHand.cards, 1, -1 do
+				if playerHand.cards[i] == sCard then
+					table.remove(playerHand.cards, i)
+					break
+				end
 			end
-			-- No se limpia stash: el botón funciona indefinidas veces
+		end
+		drawnCards.cards = {}
+		for _, card in ipairs(stash) do
+			table.insert(drawnCards.cards, card)
+		end
+		printState()
+		return
+	end
+
+	-- Click en botón rellenar => llenar drawnCards desde el deck
+	if button == 1 and x >= btnX and x <= btnX + btnW and y >= btn3Y and y <= btn3Y + btnH then
+		if #drawnCards.cards == 0 or #drawnCards.cards == 1 then
+			while not drawnCards:isFull() and not deck:isEmpty() do
+				drawnCards:addCard(deck:drawCard())
+			end
+			saveScenario()
 			printState()
+		end
+		return
+	end
+
+	-- Click sobre una carta robada
+	local idx = drawnCards:getCardAt(x, y)
+	if idx then
+		-- No se puede clickear la última carta si aún quedan cartas en el mazo
+		if deck:count() > 0 and drawnCards:count() == 1 then
 			return
 		end
 
-		-- Click en botón rellenar => llenar drawnCards desde el deck
-		if x >= btnX and x <= btnX + btnW and y >= btn3Y and y <= btn3Y + btnH then
-			if #drawnCards.cards == 0 or #drawnCards.cards == 1 then
-				while not drawnCards:isFull() and not deck:isEmpty() do
-					drawnCards:addCard(deck:drawCard())
-				end
-				saveScenario()
+		local card = drawnCards.cards[idx]
+
+		-- Click derecho sobre Espadas o Tréboles => descarte directo y daño
+		if button == 2 then
+			if card.suit == "Espadas" or card.suit == "Treboles" then
+				drawnCards:removeCard(idx)
+				discard:addCard(card)
+				lifepoints = lifepoints - card.value
 				printState()
 			end
 			return
 		end
 
-		-- Click sobre una carta robada
-		local idx = drawnCards:getCardAt(x, y)
-		if idx then
-			-- No se puede mover la última carta si aún quedan cartas en el mazo
-			if deck:count() > 0 and drawnCards:count() == 1 then
-				return
+		-- Click izquierdo
+		if button == 1 then
+			-- Rule 2/3: Espadas y Tréboles no pueden ir a mano sin diamante
+			if card.suit == "Espadas" or card.suit == "Treboles" then
+				local hasDiamond
+				local diamondValue
+				for _, c in ipairs(playerHand.cards) do
+					if c.suit == "Diamantes" then
+						hasDiamond = true
+						diamondValue = c.value
+						break
+					end
+				end
+				if not hasDiamond then
+					return
+				end
+				-- No puede superar el valor de la última carta en mano si es espada/trébol
+				local lastCard = playerHand.cards[#playerHand.cards]
+				if lastCard and (lastCard.suit == "Espadas" or lastCard.suit == "Treboles") then
+					if card.value > lastCard.value then
+						return
+					end
+				end
 			end
-			local card = drawnCards:removeCard(idx)
-			-- Corazones van al descarte, el resto a la mano
+
+			-- Remover la carta de drawnCards
+			drawnCards:removeCard(idx)
+
 			if card.suit == "Corazones" then
+				-- Rule 6: curar, max 20
+				lifepoints = math.min(lifepoints + card.value, 20)
 				discard:addCard(card)
-			else
+			elseif card.suit == "Diamantes" then
+				-- Rule 5: si ya hay diamante, todo al descarte
+				for i = #playerHand.cards, 1, -1 do
+					if playerHand.cards[i].suit == "Diamantes" then
+						for _, c in ipairs(playerHand.cards) do
+							discard:addCard(c)
+						end
+						playerHand.cards = {}
+						break
+					end
+				end
 				playerHand:addCard(card)
+			elseif card.suit == "Espadas" or card.suit == "Treboles" then
+				playerHand:addCard(card)
+
+				-- Rule 4: comparar con diamante en mano y descontar lifepoints
+				for _, c in ipairs(playerHand.cards) do
+					if c.suit == "Diamantes" then
+						if c.value < card.value then
+							lifepoints = lifepoints - (card.value - c.value)
+						end
+						break
+					end
+				end
 			end
 			printState()
-			return
 		end
+		return
 	end
 end
