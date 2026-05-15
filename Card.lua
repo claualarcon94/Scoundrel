@@ -17,8 +17,11 @@ function Card:new(x, y, value, suit)
 end
 
 -- Cómo se muestra cada valor numérico en pantalla
-local displayNames = {
-	[14] = "As", [11] = "J", [12] = "Q", [13] = "K"
+local displayNames = { [14] = "As", [11] = "J", [12] = "Q", [13] = "K" }
+
+local displayColors = {
+	["Diamantes"] = { 1, 0, 0 },
+	["Corazones"] = { 1, 0, 0 },
 }
 
 function Card:draw()
@@ -32,10 +35,21 @@ function Card:draw()
 	love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
 
 	-- Valor (As/J/Q/K/número) arriba a la izquierda
-	love.graphics.setColor(0, 0, 0)
+	local color = displayColors[self.suit] or { 0, 0, 0 }
+	love.graphics.setColor(color)
+
+	local boldFont
+	boldFont = love.graphics.newFont(24)
+
+	local regFont
+	regFont = love.graphics.newFont(12)
+
+	love.graphics.setFont(boldFont)
+
 	local display = displayNames[self.value] or tostring(self.value)
-	love.graphics.print(display, self.x+10, self.y+10)
+	love.graphics.print(display, self.x + 10, self.y + 10)
 
 	-- Palo abajo a la izquierda
-	love.graphics.print(self.suit, self.x+10, self.y+90)
+	love.graphics.setFont(regFont)
+	love.graphics.print(self.suit, self.x + 10, self.y + 90)
 end
