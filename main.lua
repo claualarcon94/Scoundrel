@@ -18,6 +18,7 @@ local refilling    -- true mientras se rellena drawnCards desde el deck
 local btnX, btnY, btnW, btnH = 600, 140, 80, 40
 local btn2Y = btnY + btnH + 5   -- Botón calabozo, mismo X, debajo del reinicio
 local btn3Y = btn2Y + btnH + 5  -- Botón rellenar, mismo X, debajo del calabozo
+local scoopX, scoopY, scoopW, scoopH = 325, 60, 80, 25  -- Botón scoop, entre cartas 2 y 3 de drawnCards
 
 function love.load()
 	-- Semilla aleatoria para math.random
@@ -79,6 +80,14 @@ function love.draw()
 	love.graphics.setLineWidth(2)
 	love.graphics.rectangle("line", btnX, btn3Y, btnW, btnH)
 	love.graphics.print("Rellenar", btnX + 8, btn3Y + 12)
+
+	-- Botón scoop (naranjo, arriba de drawnCards entre cartas 2 y 3)
+	love.graphics.setColor(0.9, 0.5, 0.1)
+	love.graphics.rectangle("fill", scoopX, scoopY, scoopW, scoopH)
+	love.graphics.setColor(1, 1, 1)
+	love.graphics.setLineWidth(2)
+	love.graphics.rectangle("line", scoopX, scoopY, scoopW, scoopH)
+	love.graphics.print("Scoop", scoopX + 16, scoopY + 5)
 end
 
 -- Imprime el estado actual de todas las entidades en consola
@@ -220,6 +229,25 @@ function love.mousepressed(x, y, button)
 				refilling = false
 			end
 			saveScenario()
+			printState()
+		end
+		return
+	end
+
+	-- Click en botón scoop => barajar drawnCards y enviarlas al fondo del mazo
+	if button == 1 and x >= scoopX and x <= scoopX + scoopW and y >= scoopY and y <= scoopY + scoopH then
+		if #drawnCards.cards > 0 then
+			-- Barajar las cartas de drawnCards
+			for i = #drawnCards.cards, 2, -1 do
+				local j = math.random(i)
+				drawnCards.cards[i], drawnCards.cards[j] = drawnCards.cards[j], drawnCards.cards[i]
+			end
+			-- Enviarlas al final del mazo
+			for _, card in ipairs(drawnCards.cards) do
+				table.insert(deck.cards, card)
+			end
+			drawnCards.cards = {}
+			stash = nil
 			printState()
 		end
 		return
