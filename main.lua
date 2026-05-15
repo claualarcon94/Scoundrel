@@ -10,8 +10,9 @@ local deck         -- Mazo con todas las cartas
 local drawnCards   -- Cartas robadas del mazo (max 4)
 local discard      -- Descarte para cartas Corazones
 local playerHand   -- Mano del jugador
-local stash        -- Escenario guardado (array de cartas) o nil
+local stash        -- Escenario guardado: { drawnCards, handCards, tempDiscard, lifepoints } o nil
 local lifepoints = 20  -- Vida del jugador
+local refilling    -- true mientras se rellena drawnCards desde el deck
 
 -- Botones: posición y tamaño
 local btnX, btnY, btnW, btnH = 600, 140, 80, 40
@@ -45,6 +46,13 @@ function love.draw()
 	-- Dibujar todas las entidades en orden
 	deck:draw()
 	discard:draw()
+	-- Si hay tempDiscard en stash, mostrarlo sobre el descarte base
+	if stash and #stash.tempDiscard > 0 then
+		local top = stash.tempDiscard[#stash.tempDiscard]
+		top.x = 50
+		top.y = 250
+		top:draw()
+	end
 	drawnCards:draw()
 	playerHand:draw()
 
@@ -111,18 +119,36 @@ function printState()
 	print("Descarte (" .. discard:count() .. "): " .. discardStr)
 	print("Mano (" .. playerHand:count() .. "): " .. handStr)
 	if stash then
-		print("Calabozo guardado (" .. #stash .. " cartas)")
+		local sDrawnStr = ""
+		for i, c in ipairs(stash.drawnCards) do
+			sDrawnStr = sDrawnStr .. (i > 1 and ", " or "") .. cardStr(c)
+		end
+		local sHandStr = ""
+		for i, c in ipairs(stash.handCards) do
+			sHandStr = sHandStr .. (i > 1 and ", " or "") .. cardStr(c)
+		end
+		local sTempStr = ""
+		for i, c in ipairs(stash.tempDiscard) do
+			sTempStr = sTempStr .. (i > 1 and ", " or "") .. cardStr(c)
+		end
+		print("Calabozo guardado (vida:" .. stash.lifepoints .. ")")
+		print("  drawn: " .. sDrawnStr)
+		print("  mano:  " .. sHandStr)
+		print("  temp:  " .. sTempStr)
 	end
 	print()
 end
 
--- Guarda (o reemplaza) el escenario actual de drawnCards en el stash
+-- Guarda (o reemplaza) el escenario actual: drawnCards, mano y vida
 function saveScenario()
-	stash = {}
+	stash = { drawnCards = {}, handCards = {}, tempDiscard = {}, lifepoints = lifepoints }
 	for _, card in ipairs(drawnCards.cards) do
-		table.insert(stash, card)
+		table.insert(stash.drawnCards, card)
 	end
-	print("--- Escenario guardado (" .. #stash .. " cartas) ---")
+	for _, card in ipairs(playerHand.cards) do
+		table.insert(stash.handCards, card)
+	end
+	print("--- Escenario guardado (robadas:" .. #stash.drawnCards .. " mano:" .. #stash.handCards .. " vida:" .. stash.lifepoints .. ") ---")
 end
 
 function love.mousepressed(x, y, button)
@@ -130,8 +156,12 @@ function love.mousepressed(x, y, button)
 	if deck:containsPoint(x, y) then
 		if button == 1 then
 			if not deck:isEmpty() and not drawnCards:isFull() then
+				refilling = true
 				drawnCards:addCard(deck:drawCard())
 				saveScenario()
+				if drawnCards:isFull() or deck:isEmpty() then
+					refilling = false
+				end
 			end
 			printState()
 		end
@@ -146,39 +176,46 @@ function love.mousepressed(x, y, button)
 		playerHand = PlayerHand:new(160, 250)
 		stash = nil
 		lifepoints = 20
+		refilling = false
 		printState()
 		return
 	end
 
 	-- Click en botón reinicio calabozo => restaurar escenario guardado
 	if stash and x >= btnX and x <= btnX + btnW and y >= btn2Y and y <= btn2Y + btnH then
-		for _, sCard in ipairs(stash) do
+		-- Remover del descarte las cartas que fueron descartadas en este escenario
+		for _, sCard in ipairs(stash.tempDiscard) do
 			for i = #discard.cards, 1, -1 do
 				if discard.cards[i] == sCard then
 					table.remove(discard.cards, i)
 					break
 				end
 			end
-			for i = #playerHand.cards, 1, -1 do
-				if playerHand.cards[i] == sCard then
-					table.remove(playerHand.cards, i)
-					break
-				end
-			end
 		end
+		-- Restaurar drawnCards y mano desde las copias del stash
 		drawnCards.cards = {}
-		for _, card in ipairs(stash) do
+		for _, card in ipairs(stash.drawnCards) do
 			table.insert(drawnCards.cards, card)
 		end
+		playerHand.cards = {}
+		for _, card in ipairs(stash.handCards) do
+			table.insert(playerHand.cards, card)
+		end
+		stash.tempDiscard = {}
+		lifepoints = stash.lifepoints
 		printState()
 		return
 	end
 
 	-- Click en botón rellenar => llenar drawnCards desde el deck
 	if button == 1 and x >= btnX and x <= btnX + btnW and y >= btn3Y and y <= btn3Y + btnH then
-		if #drawnCards.cards == 0 or #drawnCards.cards == 1 then
+		if #drawnCards.cards < 4 then
+			refilling = true
 			while not drawnCards:isFull() and not deck:isEmpty() do
 				drawnCards:addCard(deck:drawCard())
+			end
+			if drawnCards:isFull() or deck:isEmpty() then
+				refilling = false
 			end
 			saveScenario()
 			printState()
@@ -189,8 +226,8 @@ function love.mousepressed(x, y, button)
 	-- Click sobre una carta robada
 	local idx = drawnCards:getCardAt(x, y)
 	if idx then
-		-- No se puede clickear la última carta si aún quedan cartas en el mazo
-		if deck:count() > 0 and drawnCards:count() == 1 then
+		-- Bloqueado si se está rellenando, o si es la última carta y aún hay mazo
+		if refilling or (deck:count() > 0 and drawnCards:count() == 1) then
 			return
 		end
 
@@ -201,6 +238,7 @@ function love.mousepressed(x, y, button)
 			if card.suit == "Espadas" or card.suit == "Treboles" then
 				drawnCards:removeCard(idx)
 				discard:addCard(card)
+				if stash then table.insert(stash.tempDiscard, card) end
 				lifepoints = lifepoints - card.value
 				printState()
 			end
@@ -239,12 +277,14 @@ function love.mousepressed(x, y, button)
 				-- Rule 6: curar, max 20
 				lifepoints = math.min(lifepoints + card.value, 20)
 				discard:addCard(card)
+				if stash then table.insert(stash.tempDiscard, card) end
 			elseif card.suit == "Diamantes" then
 				-- Rule 5: si ya hay diamante, todo al descarte
 				for i = #playerHand.cards, 1, -1 do
 					if playerHand.cards[i].suit == "Diamantes" then
 						for _, c in ipairs(playerHand.cards) do
 							discard:addCard(c)
+							if stash then table.insert(stash.tempDiscard, c) end
 						end
 						playerHand.cards = {}
 						break
