@@ -34,6 +34,28 @@ function love.load()
 	printState()
 end
 
+-- Consolida tempDiscard a discard.cards y vacía tempDiscard
+function consolidateTempDiscard()
+	if stash and #stash.tempDiscard > 0 then
+		for _, card in ipairs(stash.tempDiscard) do
+			discard:addCard(card)
+		end
+		stash.tempDiscard = {}
+	end
+end
+
+-- Verifica que drawnCards actuales sean las mismas (referencias y orden) que stash.drawnCards
+function drawnCardsMatchStash()
+	if not stash then return false end
+	if #drawnCards.cards ~= #stash.drawnCards then return false end
+	for i = 1, #drawnCards.cards do
+		if drawnCards.cards[i] ~= stash.drawnCards[i] then
+			return false
+		end
+	end
+	return true
+end
+
 function love.draw()
 	-- Fondo gris
 	love.graphics.clear(0.5, 0.5, 0.5)
@@ -164,7 +186,8 @@ end
 function love.mousepressed(x, y, button)
 	-- Click izquierdo sobre el mazo => robar la primera carta
 	if deck:containsPoint(x, y) then
-		if button == 1 and not deck:isEmpty() then
+		if button == 1 and not deck:isEmpty() and not drawnCards:isFull() then
+			consolidateTempDiscard()
 			if not drawnCards:isFull() and (refilling or drawnCards:count() < 2) then
 				refilling = true
 				drawnCards:addCard(deck:drawCard())
@@ -192,16 +215,8 @@ function love.mousepressed(x, y, button)
 	end
 
 	-- Click en botón reinicio calabozo => restaurar escenario guardado
-	if stash and x >= btnX and x <= btnX + btnW and y >= btn2Y and y <= btn2Y + btnH then
-		-- Remover del descarte las cartas que fueron descartadas en este escenario
-		for _, sCard in ipairs(stash.tempDiscard) do
-			for i = #discard.cards, 1, -1 do
-				if discard.cards[i] == sCard then
-					table.remove(discard.cards, i)
-					break
-				end
-			end
-		end
+	if stash and not drawnCards:isFull()
+		and x >= btnX and x <= btnX + btnW and y >= btn2Y and y <= btn2Y + btnH then
 		-- Restaurar drawnCards y mano desde las copias del stash
 		drawnCards.cards = {}
 		for _, card in ipairs(stash.drawnCards) do
@@ -220,23 +235,26 @@ function love.mousepressed(x, y, button)
 
 	-- Click en botón rellenar => llenar drawnCards desde el deck
 	if button == 1 and x >= btnX and x <= btnX + btnW and y >= btn3Y and y <= btn3Y + btnH then
-		if #drawnCards.cards < 2 or refilling then
-			refilling = true
-			while not drawnCards:isFull() and not deck:isEmpty() do
-				drawnCards:addCard(deck:drawCard())
+		if not drawnCards:isFull() and not deck:isEmpty() then
+			consolidateTempDiscard()
+			if #drawnCards.cards < 2 or refilling then
+				refilling = true
+				while not drawnCards:isFull() and not deck:isEmpty() do
+					drawnCards:addCard(deck:drawCard())
+				end
+				if drawnCards:isFull() or deck:isEmpty() then
+					refilling = false
+				end
+				saveScenario()
+				printState()
 			end
-			if drawnCards:isFull() or deck:isEmpty() then
-				refilling = false
-			end
-			saveScenario()
-			printState()
 		end
 		return
 	end
 
 	-- Click en botón scoop => barajar drawnCards y enviarlas al fondo del mazo
 	if button == 1 and x >= scoopX and x <= scoopX + scoopW and y >= scoopY and y <= scoopY + scoopH then
-		if #drawnCards.cards > 0 then
+		if drawnCardsMatchStash() and (drawnCards:isFull() or (deck:isEmpty() and #drawnCards.cards > 0)) then
 			-- Barajar las cartas de drawnCards
 			for i = #drawnCards.cards, 2, -1 do
 				local j = math.random(i)
@@ -267,8 +285,11 @@ function love.mousepressed(x, y, button)
 		if button == 2 then
 			if card.suit == "Espadas" or card.suit == "Treboles" then
 				drawnCards:removeCard(idx)
-				discard:addCard(card)
-				if stash then table.insert(stash.tempDiscard, card) end
+				if stash then
+					table.insert(stash.tempDiscard, card)
+				else
+					discard:addCard(card)
+				end
 				lifepoints = lifepoints - card.value
 				printState()
 			end
@@ -306,15 +327,21 @@ function love.mousepressed(x, y, button)
 			if card.suit == "Corazones" then
 				-- Rule 6: curar, max 20
 				lifepoints = math.min(lifepoints + card.value, 20)
-				discard:addCard(card)
-				if stash then table.insert(stash.tempDiscard, card) end
+				if stash then
+					table.insert(stash.tempDiscard, card)
+				else
+					discard:addCard(card)
+				end
 			elseif card.suit == "Diamantes" then
 				-- Rule 5: si ya hay diamante, todo al descarte
 				for i = #playerHand.cards, 1, -1 do
 					if playerHand.cards[i].suit == "Diamantes" then
 						for _, c in ipairs(playerHand.cards) do
-							discard:addCard(c)
-							if stash then table.insert(stash.tempDiscard, c) end
+							if stash then
+								table.insert(stash.tempDiscard, c)
+							else
+								discard:addCard(c)
+							end
 						end
 						playerHand.cards = {}
 						break
